@@ -30,7 +30,7 @@ Hier noch einmal die klare, richtige Anordnung (ASCII-Schematisch):
      |                      --- 
     GND                     |
                             GND
-``
+```
 
 
 Erläuterungen / wichtige Punkte
