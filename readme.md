@@ -1,12 +1,14 @@
 
+
+# Markisensensoren
 Ein wenig was zur schaltung
 
-#Schaltung Windsensor
+# Schaltung Windsensor
 den habe ich noch nicht:
 Dieser liefert 20 Pulse pro s bei 1,75m/s
 wind, viel mit chatgpt gespielt, er liefert teilweise widersprüchliche
 
-#Markisensensoren
+
 
 Schaltpläne, daher hier nochmal die mir sinnvoll erscheinende Variante
 Windsensor: https://www.amazon.de/dp/B0872XPWFC?ref=ppx_yo2ov_dt_b_fed_asin_title
@@ -27,7 +29,9 @@ Hier noch einmal die klare, richtige Anordnung (ASCII-Schematisch):
    Sensor OUT (open-col.)   --- C = 10 nF
      |                      --- 
     GND                     |
-                            GND```
+                            GND
+``
+
 
 Erläuterungen / wichtige Punkte
 
@@ -54,7 +58,7 @@ Strom-/Pegelrechnung (zur Sicherheit)
     auch von Blitz und elektromagnetschen Störungen die Rede
 
 
-##Reedschalter Markise 
+## Reedschalter Markise 
 Die Reed-Schalter für die Markise (GPIO 26 m, 25 s1 und 27 s2)
 
 Sie sind folgender Typ: 
@@ -73,7 +77,7 @@ Hier wird kein externer pullup eingesetzt, da der Interne reicht. Dieser ist
 relativ hochohmig 40-50k und zieht daher den GPIO nur langsam auf high, das
 macht bei den Reeds für die markise aber nichts 
 
-#Temperatur Luftfeuchtigkeit
+# Temperatur Luftfeuchtigkeit
 
 Und dann noch ein dht22 engebaut in am2302 (hat nur 3 Beinchen) für
 Temperatur und Luftfeuchtigkeit, ist direkt an GPIO angeschlossen (GPIO23)
