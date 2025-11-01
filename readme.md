@@ -17,7 +17,7 @@ Windgeschwindigkeitssensor Anemometer DREI Tassen Sender Windgeschwindigkeitssen
 
 Hier noch einmal die klare, richtige Anordnung (ASCII-Schematisch):
 
-<pre>
+
 ```text
 3.3V
      |
@@ -31,7 +31,7 @@ Hier noch einmal die klare, richtige Anordnung (ASCII-Schematisch):
      |                      --- 
     GND                     |
                             GND
-```</pre>
+```
 
 
 Erläuterungen / wichtige Punkte
