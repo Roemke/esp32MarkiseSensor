@@ -78,7 +78,7 @@ Hier wird kein externer pullup eingesetzt, da der Interne reicht. Dieser ist
 relativ hochohmig 40-50k und zieht daher den GPIO nur langsam auf high, das
 macht bei den Reeds für die markise aber nichts 
 
-# Temperatur Luftfeuchtigkeit
+## Temperatur Luftfeuchtigkeit
 
 Und dann noch ein dht22 engebaut in am2302 (hat nur 3 Beinchen) für
 Temperatur und Luftfeuchtigkeit, ist direkt an GPIO angeschlossen (GPIO23)
