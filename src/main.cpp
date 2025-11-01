@@ -119,7 +119,7 @@ void reedApplyPins() {
   pinMode(reedPins.s1, INPUT_PULLUP);
   pinMode(reedPins.s2, INPUT_PULLUP);
   pinMode(reedPins.t, INPUT);
-  // Hinweis: Verdrahtung typisch "Reed → GND", aktiv LOW.
+  
 }
 
 static void mqttPublishAwning() {
