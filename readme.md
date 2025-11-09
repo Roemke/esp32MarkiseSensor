@@ -93,3 +93,5 @@ Es würde sich aber ein PCB lohnen.
 ## Stand
 Lötarbeiten auch für den Windsensor sind soweit durch. Blau für Signale der
 Reedkontakte und des Temperatursensors verwendet, grün für Windsensor.
+Alles auf Lochraster, schon eine ziemliche Bastelei, hier hätte sich ein
+Platinendesign gelohnt, also machen, wenn es nicht stabil läuft.
