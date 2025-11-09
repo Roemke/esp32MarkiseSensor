@@ -15,7 +15,10 @@ Windsensor: https://www.amazon.de/dp/B0872XPWFC?ref=ppx_yo2ov_dt_b_fed_asin_titl
 Mumusuki 0-70 m/s Umgebungssignal Ausgang Impulstyp Kohlenstoff 
 Windgeschwindigkeitssensor Anemometer DREI Tassen Sender Windgeschwindigkeitssensor 
 
-Hier noch einmal die klare, richtige Anordnung (ASCII-Schematisch):
+Erfahrung mit chat-GPT zur Schaltungskonzeption. Solange es um
+Textbeschreibungen geht, hört es sch vernünftig an, wenn er daraus 
+Schaltpläne macht (Ascii oder PNG) kommt ziemlich viel Müll heraus. 
+Der folgende Plan müsste sinnvoll sein
 
 
 ```text
@@ -28,11 +31,11 @@ Hier noch einmal die klare, richtige Anordnung (ASCII-Schematisch):
      |                     (optional)
      |                      | 
    Sensor OUT (open-col.)   --- C = 10 nF
-     |                      --- 
-    GND                     |
+     blau                   --- 
+                            |
                             GND
 ```
-
+Windsensor braucht 5-30 V separat und gemeinsame Masse mit ESP
 
 Erläuterungen / wichtige Punkte
 
@@ -86,3 +89,7 @@ und an 3.3V vom ESP
 
 Stromversorgung ESP über USB, ansonsten alles auf einer Lochrasterplatine. 
 Es würde sich aber ein PCB lohnen.
+
+## Stand
+Lötarbeiten auch für den Windsensor sind soweit durch. Blau für Signale der
+Reedkontakte und des Temperatursensors verwendet, grün für Windsensor.
