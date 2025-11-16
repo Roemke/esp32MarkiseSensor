@@ -95,3 +95,15 @@ Lötarbeiten auch für den Windsensor sind soweit durch. Blau für Signale der
 Reedkontakte und des Temperatursensors verwendet, grün für Windsensor.
 Alles auf Lochraster, schon eine ziemliche Bastelei, hier hätte sich ein
 Platinendesign gelohnt, also machen, wenn es nicht stabil läuft.
+Na ob ich dazu noch Lust habe? Die Verkabelung nach außen über Wagoklemmem
+gemacht, es sind halt jetzt doch einige, eigenes kleines Gehäuse
+3mal Reed - in 2er
+3.3 V  - in 2er
+Temp   - in 2er
+Signal Wind - in 2er 
+12 V   - in 3er (an Spannungswandler auf 5 V für Esp / an Windsensor / Eingang
+Masse  - jede Menge, ich hoffe ich habe alles, an 5er Wago
+
+den Temp-Sensor in eigenes kleines gehäuse, nicht gut, aber egal, kein Aufwand 
+betreiben, der Sensor wird schon 1-2 Jahre halten :-), habe aber schwarzes pla genommen, bei
+Sonne wird er gut warm werden...

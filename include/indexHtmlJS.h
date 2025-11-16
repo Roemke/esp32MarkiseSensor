@@ -187,7 +187,11 @@ function initUI() {
             t:      parseInt(document.getElementById("gpioT").value, 10) //kein Reed, aber speichern
         });
     });
-
+    // Reboot Button
+    const btnReboot = document.getElementById("btnReboot");
+    if (btnReboot) btnReboot.addEventListener("click", () => {
+        sendAction("reboot");
+    });
 }
 window.addEventListener("load", initUI);
 </script>
@@ -268,7 +272,7 @@ window.addEventListener("load", initUI);
   </ul>
 
   <!-- Logs ans Ende des Help-Tabs -->
-  <h3>Log-Nachrichten</h3>
+  <h3 style="display:inline;">Log-Nachrichten</h3> <button class="btn" id="btnReboot"> Reboot ESP</button>
   <div id="logContainer" style="height:300px; overflow:auto; background:#f0f0f0; padding:10px; font-family:monospace;"></div>
 </div>
 

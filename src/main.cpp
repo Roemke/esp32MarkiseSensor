@@ -218,8 +218,7 @@ void initialInformClient(AsyncWebSocketClient *client)
 
 void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
   AwsEventType type, void *arg, uint8_t *data, size_t len)
-{
-  logPrintf("ws-event, Heap: %d\n", ESP.getFreeHeap());
+{  
   if (type == WS_EVT_CONNECT) 
   {
     logPrintf("📡 Client #%u verbunden\n", client->id());
@@ -229,7 +228,34 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
   else if(type != WS_EVT_DATA) 
     return;
 
+  logPrintf("Event-Type: %d, Heap: %d\n", type, ESP.getFreeHeap());
   AwsFrameInfo *info = (AwsFrameInfo*)arg;
+
+// Debug aller Bedingungen
+if(!info->final) {
+    logPrintf("❌ WS: info->final == false\n");
+    return;
+}
+
+if(info->index != 0) {
+    logPrintf("❌ WS: info->index = %u (erwartet 0)\n", info->index);
+    return;
+}
+
+if(info->len != len) {
+    logPrintf("❌ WS: info->len (%u) != len (%u) -> frame fragmentiert?\n",
+              info->len, len);
+    return;
+}
+
+if(info->opcode != WS_TEXT) {
+    logPrintf("❌ WS: opcode = %u (erwartet WS_TEXT=1)\n", info->opcode);
+    return;
+}
+
+logPrintf("✔️ WS: Frame OK – Verarbeitung laeuft weiter\n");
+
+  
   if(!info->final || info->index != 0 || info->len != len || info->opcode != WS_TEXT) return;
 
   
@@ -247,7 +273,8 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
 
   String action = doc["action"] | "";
   JsonVariant value = doc["value"];
-  logPrintf("Aktion: %s, Wert: %s\n", action.c_str(), value.as<String>().c_str());
+  String valueStr = value.isNull() ? "" : value.as<String>();
+  logPrintf("Aktion: %s, Wert: %s\n", action.c_str(), valueStr.c_str());
    
   if (action == "wifiSetCredentials")
   {
@@ -295,6 +322,13 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
     reedSaveConfig();
     informClients("reedPinsSaved", "ok");
     logPrintf("GPIO Pins aktualisiert: M=%d, S1=%d, S2=%d, T=%d\n", m, s1, s2,t);
+  }
+  else if (action == "reboot") 
+  {
+    logPrintln("Reboot Befehl empfangen, Neustart...");
+    informClients("rebooting", "ESP wird neu gestartet");
+    delay(1000); // kurze Pause, damit Nachricht gesendet wird
+    ESP.restart();
   }
 
 }
