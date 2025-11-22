@@ -79,7 +79,7 @@ const char index_html[] PROGMEM = R"rawliteral(
     padding: 10px;
     border-radius: 8px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    martin-top: -60px;
+    margin-top: -60px;
   }
 
   .wind-gauge-wrapper {
