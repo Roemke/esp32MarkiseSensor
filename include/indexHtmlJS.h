@@ -1,3 +1,4 @@
+#pragma once
 #include <pgmspace.h>
 
 const char index_html[] PROGMEM = R"rawliteral(
@@ -50,12 +51,107 @@ const char index_html[] PROGMEM = R"rawliteral(
   .badge.ok      { background:#2e7d32; color:#fff; }  /* grün */
   .badge.warn    { background:#f9a825; color:#000; }  /* gelb */
   .badge.err     { background:#c62828; color:#fff; }  /* rot */
-  .badge.neutral { background:#9e9e9e; color:#fff; }  /* grau */    
+  .badge.neutral { background:#9e9e9e; color:#fff; }  /* grau */  
+  
+  /* styles für mobile und so */
+  .status-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: flex-start;
+  }
+
+  .status-col {
+    flex: 1 1 260px;
+    min-width: 260px;
+  }
+
+  /* Mobile: alles untereinander */
+  @media (max-width: 900px) {
+    .status-grid {
+      flex-direction: column;
+    }
+  }
+
+  /* Wind-Card und Diagramme */
+  .wind-card {
+    background: #fafafa;
+    padding: 10px;
+    border-radius: 8px;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  }
+
+  .wind-gauge-wrapper {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+
+  #windGauge {
+    width: 260px;      /* feste Größe: garantiert runder Halbkreis */
+    height: 130px;     /* exakt halbe Höhe → perfekter Halbkreis */
+    display: block;
+    margin: auto;
+  }
+
+  .wind-value {
+    font-size: 1.4em;
+    margin-top: 4px;
+  }
+
+  .wind-bft {
+    font-size: 0.9em;
+    color: #555;
+  }
+
+  .wind-chart-wrapper {
+    margin-top: 10px;
+  }
+
+  .wind-chart-wrapper canvas {
+    width: 100%%;
+    max-width: 340px;
+  }
+
 </style>
+
 
 <script>
 let gateway = `ws://${window.location.hostname}/ws`;
 let websocket = null;
+
+// ---- Wind UI / Charts ----
+let maxWind = 20;  // hier kannst du später auf 30 ändern
+let latestWindValue = 0.0;
+
+let windGaugeChart = null;
+let windHistoryChart = null;
+const windHistory = [];
+
+function windToBeaufort(v) {
+  // sehr grobe Einteilung in m/s
+  const table = [
+    { max: 0.2,  bft: 0, label: "Flaute" },
+    { max: 1.5,  bft: 1, label: "Leiser Zug" },
+    { max: 3.3,  bft: 2, label: "Leichte Brise" },
+    { max: 5.4,  bft: 3, label: "Schwache Brise" },
+    { max: 7.9,  bft: 4, label: "Mäßige Brise" },
+    { max: 10.7, bft: 5, label: "Frische Brise" },
+    { max: 13.8, bft: 6, label: "Starker Wind" },
+    { max: 17.1, bft: 7, label: "Steifer Wind" },
+    { max: 20.7, bft: 8, label: "Stürmischer Wind" },
+    { max: 24.4, bft: 9, label: "Sturm" },
+    { max: 28.4, bft: 10, label: "Schwerer Sturm" }
+  ];
+
+  for (const e of table) {
+    if (v <= e.max) return { bft: e.bft, label: e.label };
+  }
+  return { bft: 11, label: "Orkanartig" };
+}
+
+// ------------------------------------------------------
 
 
 function addLogLine(line) {
@@ -96,7 +192,20 @@ function initWebSocket() {
         {
           addLogLine(data.line);
         }
-
+        else if (data.action === "setMaxWind") 
+        {
+          maxWind = Number(data.value);
+          console.log("Neuer MaxWind:", maxWind);
+          if (windHistoryChart) {
+              windHistoryChart.options.scales.y.max = maxWind;
+              windHistoryChart.update();
+          }
+          if (windGaugeChart) updateWindUI(latestWindValue);
+        }  
+        else
+        {
+          addLogLine("sonstiges"+JSON.stringify(data));
+        }
     };
 }
 
@@ -120,6 +229,11 @@ function humClass(h)
   if (h < 20 || h > 80) return "warn";
   return "ok";
 }
+function windClass(w) {
+    if (w >= 15) return "err";     // Sturm
+    if (w >= 8)  return "warn";    // starker Wind
+    return "ok";                   // normal
+}
 
 function setBadge(id, text, cls) 
 {
@@ -129,12 +243,197 @@ function setBadge(id, text, cls)
   el.className = "badge " + (cls || "neutral");
 }
 
+//helper fuer fließenden übergang
+function hexToRgb(hex) {
+    const n = parseInt(hex.replace("#",""), 16);
+    return { r: (n>>16)&255, g: (n>>8)&255, b: n&255 };
+}
+
+function linInterpolationColor(c1, c2, t) {
+    return {
+        r: c1.r + (c2.r - c1.r) * t,
+        g: c1.g + (c2.g - c1.g) * t,
+        b: c1.b + (c2.b - c1.b) * t
+    };
+}
+function drawBeaufortGradientScale(ctx, cx, cy, r, lw, maxWind) {
+    const beaufortSteps = [
+        { max: 1.5,  color: "#4caf50" },
+        { max: 3.3,  color: "#8bc34a" },
+        { max: 5.4,  color: "#cddc39" },
+        { max: 7.9,  color: "#ffeb3b" },
+        { max: 10.7, color: "#ffc107" },
+        { max: 13.8, color: "#ff9800" },
+        { max: 17.1, color: "#ff5722" },
+        { max: 20.7, color: "#f44336" },
+        { max: 24.4, color: "#e53935" },
+        { max: 28.4, color: "#c62828" },
+        { max: 33.0, color: "#b71c1c" },
+        { max: 40.0, color: "#880e4f" },
+        { max: 50.0, color: "#4a148c" },
+        { max: 80.0, color: "#1a237e" }
+    ];
+
+    // Steps passend zu maxWind aufbauen
+    const steps = [];
+    let prev = 0;
+    for (const s of beaufortSteps) {
+        const end = Math.min(s.max, maxWind);
+        steps.push({ min: prev, max: end, color: s.color });
+        prev = end;
+        if (end >= maxWind) break;
+    }
+
+    ctx.lineWidth = lw;
+
+    const totalWind  = maxWind;
+    const angleStart = Math.PI;    // links
+    const totalAngle = Math.PI;    // 180°-Halbkreis
+
+    for (const s of steps) {
+        let a1 = angleStart + (s.min / totalWind) * totalAngle;
+        let a2 = angleStart + (s.max / totalWind) * totalAngle;
+        console.log(`s: ${s.min} - ${s.max}, angles: ${a1} - ${a2}, color: ${s.color}`);
+        ctx.strokeStyle = s.color;
+        ctx.beginPath();
+        let counter=false;
+        //start und end werden im Uhrzeigersinn gemessen, d.h. von pi bis 2pi ist der obere Kreis
+        ctx.arc(cx, cy, r, a1, a2, counter); //true: wäre gegen Uhrzeigersinn zeichnen
+        ctx.stroke();
+    }
+}
+
+
+//----------------- Helper End ----------------
+function drawWindGauge(value, maxWind) {
+    const canvas = document.getElementById("windGauge");
+    if (!canvas) return;
+    const ctx = canvas.getContext("2d");
+
+    const w = canvas.width;
+    const h = canvas.height;
+
+    // Mittelpunkt unten in der Mitte
+    const margin = 10;       // Abstand zum Rand
+    const lw = 80;           // gewünschte Strichstärke    
+
+    const cx = w / 2;
+    const cy = h-margin/2;
+    const rGauge = Math.min(w / 2, h) - margin - lw/2-1; 
+    const rPointer = rGauge + lw/2-margin/2;
+
+
+    ctx.clearRect(0, 0, w, h);
+
+    // Schutz: maxWind darf nicht 0 oder negativ sein
+    if (!(maxWind > 0)) maxWind = 1;
+
+    // Wert v ins gültige Intervall klemmen
+    const v = Math.max(0, Math.min(value, maxWind));
+
+    // Wir laufen von links (π) nach rechts (0) über den oberen Halbkreis
+    //let prevFrac = 0;  // 0 = maxWind 0, 1 = maxWind erreicht
+    //geaendert, jedes segment wird durch folgende routine in 0.5 Grad unterteilt
+    drawBeaufortGradientScale(ctx, cx, cy, rGauge, lw, maxWind);
+
+
+    // ------ Zeiger ------
+    const fracVal = v / maxWind;    
+    const valAngle = Math.PI + fracVal * Math.PI;
+    const px = cx + Math.cos(valAngle) * rPointer;
+    const py = cy + Math.sin(valAngle) * rPointer;
+
+    ctx.beginPath();
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 3;
+    ctx.moveTo(cx, cy);
+    ctx.lineTo(px, py);
+    ctx.stroke();
+
+    // kleiner Punkt am Zentrum
+    ctx.beginPath();
+    ctx.fillStyle = "#000";
+    ctx.arc(cx, cy, 5, 0, Math.PI * 2);
+    ctx.fill();
+}
+
+function updateWindUI(w) {
+    const v = Math.min(w, maxWind);  // sinnvoll & einfach
+    drawWindGauge(v, maxWind);
+
+    document.getElementById("windValue").textContent = v.toFixed(1);
+
+    const bf = windToBeaufort(v);
+    document.getElementById("windBft").textContent =
+        `Beaufort ${bf.bft}: ${bf.label}`;
+
+    // Verlauf weiter aktualisieren wie bisher …
+    const now = new Date().toLocaleTimeString();
+    windHistory.push({ t: now, v: v });
+    if (windHistory.length > 60) windHistory.shift();
+    windHistoryChart.data.labels = windHistory.map(e => e.t);
+    windHistoryChart.data.datasets[0].data = windHistory.map(e => e.v);
+    windHistoryChart.update();
+}
+
+function initWindHistoryChart() {
+    const chartCanvas = document.getElementById("windChart");
+    if (!chartCanvas || !window.Chart) return;
+
+    const ctx = chartCanvas.getContext("2d");
+
+    windHistoryChart = new Chart(ctx, {
+        type: "line",
+        data: {
+            labels: [],
+            datasets: [{
+                label: "Wind (m/s)",
+                data: [],
+                borderColor: "#1976d2",
+                backgroundColor: "rgba(25,118,210,0.15)",
+                lineTension: 0.35,
+                borderWidth: 2,
+                pointRadius: 0,
+                fill: true
+            }]
+        },
+        options: {
+            responsive: true,
+            animation: false,
+            scales: {
+                x: { display: false },
+                y: {
+                    min: 0,
+                    max: maxWind,
+                    grid: { color: "rgba(0,0,0,0.1)" }
+                }
+            },
+            plugins: {
+                legend: { display: false }
+            }
+        }
+    });
+}
+
+function initWindUI() {
+  initWindHistoryChart();   // ✔ Verlaufsgrafik initialisieren
+  drawWindGauge(0, maxWind); // ✔ einmal initialer Gauge-Draw  
+}
+
+//----------------------
 function updateStatusUI(v) {
   if (typeof v.t === "number")  setBadge("valTemp", v.t.toFixed(1) + " °C", tempClass(v.t));
-  if (typeof v.h === "number")  setBadge("valHum",  v.h.toFixed(1) + " %",  humClass(v.h));
+  if (typeof v.h === "number")  setBadge("valHum",  v.h.toFixed(1) + " %%",  humClass(v.h));
   if (typeof v.m !== "undefined")  setBadge("valM",  magnetText(!!v.m),  !!v.m ? "ok" : "err");
   if (typeof v.s1 !== "undefined") setBadge("valS1", magnetText(!!v.s1), !!v.s1 ? "ok" : "err");
   if (typeof v.s2 !== "undefined") setBadge("valS2", magnetText(!!v.s2), !!v.s2 ? "ok" : "err");
+  if (typeof v.w === "number") 
+  { 
+    setBadge("valWind", v.w.toFixed(1) + " m/s", windClass(v.w));
+    latestWindValue = v.w;
+    updateWindUI(v.w);
+  }
+
 }
 
 function sendAction(action, value="") 
@@ -154,9 +453,12 @@ function openTab(evt, tabName) {
     evt.currentTarget.className += " active";
 }
 
+
+
 function initUI() {
     initWebSocket();
     document.getElementById("defaultTab").click();
+    initWindUI();//wind UI initialisieren
 
 
     // WLAN speichern
@@ -184,7 +486,8 @@ function initUI() {
             markise: parseInt(document.getElementById("gpioMarkise").value, 10),
             s1:      parseInt(document.getElementById("gpioS1").value, 10),
             s2:      parseInt(document.getElementById("gpioS2").value, 10),
-            t:      parseInt(document.getElementById("gpioT").value, 10) //kein Reed, aber speichern
+            t:       parseInt(document.getElementById("gpioT").value, 10), //kein Reed, aber speichern
+            wind:    parseInt(document.getElementById("gpioWind").value, 10)
         });
     });
     // Reboot Button
@@ -192,9 +495,29 @@ function initUI() {
     if (btnReboot) btnReboot.addEventListener("click", () => {
         sendAction("reboot");
     });
+    const  btnCheck = document.getElementById("btnCheck");
+    if (btnCheck) btnCheck.addEventListener("click", () => {
+        sendAction("check", "Testnachricht vom Client");
+    });
+    
+    // MaxWind Slider live anzeigen    
+    const maxWindSlider = document.getElementById("maxWindSlider");
+    const maxWindValue  = document.getElementById("maxWindValue");    
+    maxWindSlider.addEventListener("input", () => {
+      maxWindValue.textContent = maxWindSlider.value;
+    });
+    const btnMaxWindApply = document.getElementById("btnMaxWindApply");
+    btnMaxWindApply.addEventListener("click", () => {
+        sendAction("setMaxWind", Number(maxWindSlider.value));
+    });        
 }
+
+
 window.addEventListener("load", initUI);
 </script>
+<!-- und ein wenig für die Grafik des Windsensors -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
 </head>
 
 <body>
@@ -205,13 +528,40 @@ window.addEventListener("load", initUI);
 </div>
 <div id="status" class="tabcontent">
   <h2>Status</h2>
-  <div class="kv"><label>Temperatur:</label> <span class="badge" id="valTemp">--.- °C</span></div>
-  <div class="kv"><label>Feuchtigkeit:</label> <span class="badge" id="valHum">--.- %%</span></div>
-  <hr>
-  <div class="kv"><label>Magnet Markise:</label> <span class="badge" id="valM">unbekannt</span></div>
-  <div class="kv"><label>Magnet Sensor 1:</label> <span class="badge" id="valS1">unbekannt</span></div>
-  <div class="kv"><label>Magnet Sensor 2:</label> <span class="badge" id="valS2">unbekannt</span></div>
+
+  <div class="status-grid">
+
+    <!-- Linke Spalte: Temperatur / Feuchte / Reed -->
+    <div class="status-col">
+      <div class="kv"><label>Temperatur:</label> <span class="badge" id="valTemp">--.- °C</span></div>
+      <div class="kv"><label>Feuchtigkeit:</label> <span class="badge" id="valHum">--.- %%</span></div>
+      <hr>
+      <div class="kv"><label>Magnet Markise:</label> <span class="badge" id="valM">unbekannt</span></div>
+      <div class="kv"><label>Magnet Sensor 1:</label> <span class="badge" id="valS1">unbekannt</span></div>
+      <div class="kv"><label>Magnet Sensor 2:</label> <span class="badge" id="valS2">unbekannt</span></div>
+      <div class="kv"><label>Wind (Text):</label> <span class="badge" id="valWind">--.- m/s</span></div>
+    </div>
+
+    <!-- Rechte Spalte: Wind-Gauge + Mini-Chart -->
+    <div class="status-col">
+      <div class="wind-card">
+        <h3>Wind</h3>
+        <div class="wind-gauge-wrapper">
+          <canvas id="windGauge" width="260" height="130"></canvas>
+          <div class="wind-value">
+            <span id="windValue">--.-</span> m/s
+          </div>
+          <div class="wind-bft" id="windBft">Beaufort: --</div>
+        </div>
+        <div class="wind-chart-wrapper">
+          <canvas id="windChart"></canvas>
+        </div>
+      </div>
+    </div>
+
+  </div>
 </div>
+
 <div id="wifi" class="tabcontent">
   <h2>WLAN Konfiguration</h2>
   <p>Mac-Adresse im AP-Modus: %WIFI_MAC_AP%</p>
@@ -259,11 +609,21 @@ window.addEventListener("load", initUI);
     <label for="gpioT">Temperatursensor (GPIO)</label>
     <input type="number" id="gpioT" min="0" max="39" value="%GPIO_T%" placeholder="z.B. 23">
   </div>
+  <div>
+    <label for="gpioWind">Windsensor (GPIO)</label>
+    <input type="number" id="gpioWind" min="0" max="39" value="%GPIO_WIND%" placeholder="z.B. 33">
+  </div>
   <button class="btn" id="btnReedSave">GPIOs Speichern</button>
+  <div>
+    <label for="maxWindSlider">Maximaler Windbereich (m/s)</label>
+    <input type="range" id="maxWindSlider" min="1" max="50" value="20" step="1">
+    <span id="maxWindValue">20</span> m/s
+  </div>
+  <button class="btn" id="btnMaxWindApply">MaxWind anwenden</button>
 </div>
 <div id="help" class="tabcontent">
   <h2>Help</h2>
-  <p>Folgende Funktionen existiereen:</p>
+  <p>Folgende Funktionen existieren:</p>
   <ul>
     <li>Steuerung der Markise</li>
     <li>Setup der Servo-Endpunkte</li>
@@ -272,7 +632,9 @@ window.addEventListener("load", initUI);
   </ul>
 
   <!-- Logs ans Ende des Help-Tabs -->
-  <h3 style="display:inline;">Log-Nachrichten</h3> <button class="btn" id="btnReboot"> Reboot ESP</button>
+  <h3 style="display:inline;">Log-Nachrichten</h3> 
+  <button class="btn" id="btnCheck"> Send Testmessage to ESP</button>
+  <button class="btn" id="btnReboot"> Reboot ESP</button>
   <div id="logContainer" style="height:300px; overflow:auto; background:#f0f0f0; padding:10px; font-family:monospace;"></div>
 </div>
 

@@ -5,6 +5,7 @@
 #include "main.h"
 
 extern AsyncWebSocket ws;
+std::vector<String> pendingMessages;
 
 char logBuffer[LOG_BUFFER_SIZE][LOG_LINE_LENGTH]; // 50 Zeilen à 128 Zeichen
 uint8_t logIndex = 0; // Index der nächsten Zeile
@@ -24,7 +25,14 @@ void logBufferAdd(const char *line) {
     String msg;
     serializeJson(doc, msg);
 
-    ws.textAll(msg);
+
+    // neu:
+    if (!insideWebSocketEvent) {
+        ws.textAll(msg);
+    } else {
+        pendingMessages.push_back(msg);
+    }
+
 }
 
 void logPrintln(const String &text) {
@@ -54,5 +62,16 @@ void logPrintf(const char* format, ...) {
     }
     if (start < s.length()) {
         logBufferAdd(s.substring(start).c_str());
+    }
+}
+
+void logProcessPending() 
+{
+    if (!pendingMessages.empty() && !insideWebSocketEvent)
+    {
+        for (auto &msg : pendingMessages)
+            ws.textAll(msg);
+
+        pendingMessages.clear();
     }
 }

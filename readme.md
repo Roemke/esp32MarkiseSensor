@@ -61,6 +61,7 @@ Strom-/Pegelrechnung (zur Sicherheit)
     begrenzt 1 k den Strom grob auf ~3.3 mA → schützt den Pin. (vorher war
     auch von Blitz und elektromagnetschen Störungen die Rede
 
+Ich habe in Erinnerung, dass ich GPIO 33 gewählt habe. 
 
 ## Reedschalter Markise 
 Die Reed-Schalter für die Markise (GPIO 26 m, 25 s1 und 27 s2)

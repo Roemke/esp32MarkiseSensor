@@ -8,6 +8,14 @@
 #include "wifi.h"
 #include "logging.h"
 #include "mqtt.h"
+// Problem - chatgpt: 
+// Du sendest WebSocket-Nachrichten (ws.textAll()) während eines WebSocket-Events.
+//hmm, hätte ich auch selber drauf kommen können...?
+// müsste ich ggf. auch in anderen Projekten anpassen...
+bool pendingReboot = false;
+bool insideWebSocketEvent = false;
+//gleiches Problem bei informClients (json-kram)
+std::vector<PendingWSMsg> wsOutbox;
 
 // ---- WebServer + WebSocket ----
 AsyncWebServer server(80);
@@ -25,9 +33,51 @@ struct ReedPins {
   int markise = 26; // Defaults
   int s1 = 25;
   int s2 = 27; 
+  int wind = 33;
   int t = 23;   // Temperatur, kein Reed, aber speichern
 } reedPins;
 
+//windgeschichten
+volatile uint32_t windPulses = 0;   // Zählt die Pulse per ISR, volatile wegen ISR
+uint32_t lastWindMs = 0;
+float windSpeed = 0.0f; 
+
+void IRAM_ATTR windISR() { //darf nicht inline sein
+  windPulses++;
+}
+
+bool pollWindSensor() 
+{
+    static float lastWind = NAN;
+    static uint32_t lastPoll = 0;
+
+    uint32_t now = millis();
+    if (now - lastPoll < 500) return false; // alle 500 ms
+    lastPoll = now;
+
+    // Pulse atomar lesen und zurücksetzen
+    uint32_t pulses = windPulses;
+    windPulses = 0;
+
+    // 500ms → factor 2
+    float pps = pulses * 2.0f;
+    float newWind = pps * (1.75f / 20.0f);
+
+    bool changed = false;
+    if (isnan(lastWind) || fabsf(newWind - lastWind) >= 0.2f) {  
+        // Änderung >= 0.2 m/s
+        changed = true;
+    }
+
+    windSpeed = newWind;
+    lastWind = newWind;
+
+    if (changed) {
+        logPrintf("Wind geändert: %.2f m/s\n", windSpeed);
+    }
+
+    return changed;
+}
 
 
 // Entprellung für Reedkontakte (aktiv LOW)
@@ -62,6 +112,7 @@ String makeSensorMsg() {
   v["m"]  = (int)dbM.stable;
   v["s1"] = (int)dbS1.stable;
   v["s2"] = (int)dbS2.stable;
+  v["w"]  = roundf(windSpeed * 10) / 10.0f;
   String msg;
   serializeJson(doc, msg);
   return msg;
@@ -84,6 +135,7 @@ bool reedSaveConfig() {
   doc["s1"] = reedPins.s1;
   doc["s2"] = reedPins.s2;
   doc["t"] = reedPins.t;
+  doc["wind"] = reedPins.wind;
   bool ok = (serializeJson(doc, f) > 0);
   f.close();
   return ok;
@@ -105,12 +157,14 @@ bool reedLoadConfig() {
   int s1 = doc["s1"] | reedPins.s1;
   int s2 = doc["s2"] | reedPins.s2;
   int t = doc["t"] | reedPins.t;
+  int w = doc["wind"] | reedPins.wind;
 
   // Validieren
   if (isSafeInputPullupPin(m)) reedPins.markise = m;
   if (isSafeInputPullupPin(s1)) reedPins.s1 = s1;
   if (isSafeInputPullupPin(s2)) reedPins.s2 = s2;
   if (isSafeInputPullupPin(t)) reedPins.t = t;
+  if (isSafeInputPullupPin(w)) reedPins.wind = w;
   return true;
 }
 
@@ -119,6 +173,8 @@ void reedApplyPins() {
   pinMode(reedPins.s1, INPUT_PULLUP);
   pinMode(reedPins.s2, INPUT_PULLUP);
   pinMode(reedPins.t, INPUT);
+  pinMode(reedPins.wind, INPUT); //externer Pullup
+  attachInterrupt(reedPins.wind, windISR, FALLING);//interrupt ISR bei fallender Flanke
   
 }
 
@@ -148,8 +204,12 @@ static void mqttPublishClimate() {
   if (isnan(curHum))  doc["h"] = nullptr;
   else                doc["h"] = roundf(curHum * 10) / 10.0f;
 
+  // Wind (m/s)
+  if (isnan(windSpeed)) doc["w"] = nullptr;
+  else                  doc["w"] = roundf(windSpeed * 10) / 10.0f;
+
   String payload; 
-  payload.reserve(96);
+  payload.reserve(128);
   serializeJson(doc, payload);
   mqtt.publishClimateStatus(payload);       // -> climate/status
 }
@@ -180,6 +240,9 @@ String processor(const String& var)
     result = String(reedPins.s2);
   else if (var == "GPIO_T")
     result = String(reedPins.t);
+  else if (var == "GPIO_WIND")
+    result = String(reedPins.wind);
+    
   return result;
 }
 
@@ -196,7 +259,7 @@ void informClients(const String& action, T value)
 
   String msg;
   serializeJson(doc, msg);
-  ws.textAll(msg);
+  wsOutbox.push_back({0, msg});
 }
 
 
@@ -212,13 +275,14 @@ void initialInformClient(AsyncWebSocketClient *client)
   }
   String msg;
   serializeJson(doc, msg);
-  client->text(msg);
-  client->text(makeSensorMsg());
+  wsOutbox.push_back({client->id(), msg});
+  wsOutbox.push_back({client->id(), makeSensorMsg()});
 }
 
 void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
   AwsEventType type, void *arg, uint8_t *data, size_t len)
 {  
+  insideWebSocketEvent = true;
   if (type == WS_EVT_CONNECT) 
   {
     logPrintf("📡 Client #%u verbunden\n", client->id());
@@ -226,40 +290,41 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
     initialInformClient(client);
   }
   else if(type != WS_EVT_DATA) 
+  {
+    insideWebSocketEvent = false;
     return;
+  }
 
   logPrintf("Event-Type: %d, Heap: %d\n", type, ESP.getFreeHeap());
   AwsFrameInfo *info = (AwsFrameInfo*)arg;
 
-// Debug aller Bedingungen
-if(!info->final) {
-    logPrintf("❌ WS: info->final == false\n");
-    return;
-}
+  // Debug aller Bedingungen
+  if(!info->final) {
+      logPrintf("❌ WS: info->final == false\n");
+      insideWebSocketEvent = false;
+      return;
+  }
 
-if(info->index != 0) {
-    logPrintf("❌ WS: info->index = %u (erwartet 0)\n", info->index);
-    return;
-}
+  if(info->index != 0) {
+      logPrintf("❌ WS: info->index = %u (erwartet 0)\n", info->index);
+      insideWebSocketEvent = false;
+      return;
+  }
 
-if(info->len != len) {
-    logPrintf("❌ WS: info->len (%u) != len (%u) -> frame fragmentiert?\n",
-              info->len, len);
-    return;
-}
+  if(info->len != len) {
+      logPrintf("❌ WS: info->len (%u) != len (%u) -> frame fragmentiert?\n",
+                info->len, len);
+      insideWebSocketEvent = false;
+      return;
+  }
 
-if(info->opcode != WS_TEXT) {
-    logPrintf("❌ WS: opcode = %u (erwartet WS_TEXT=1)\n", info->opcode);
-    return;
-}
+  if(info->opcode != WS_TEXT) {
+      logPrintf("❌ WS: opcode = %u (erwartet WS_TEXT=1)\n", info->opcode);
+      insideWebSocketEvent = false;
+      return;
+  }
 
-logPrintf("✔️ WS: Frame OK – Verarbeitung laeuft weiter\n");
-
-  
-  if(!info->final || info->index != 0 || info->len != len || info->opcode != WS_TEXT) return;
-
-  
-  
+  logPrintf("✔️ WS: Frame OK – Verarbeitung laeuft weiter\n");
 
   // StaticJsonDocument mit ausreichendem Puffer, deprecated sollte reichen ein JsonDocument zu nehmen
   JsonDocument doc;
@@ -268,6 +333,7 @@ logPrintf("✔️ WS: Frame OK – Verarbeitung laeuft weiter\n");
   {
     Serial.print("JSON Fehler: ");
     logPrintln(error.c_str());
+    insideWebSocketEvent = false;
     return;
   }
 
@@ -285,7 +351,7 @@ logPrintf("✔️ WS: Frame OK – Verarbeitung laeuft weiter\n");
       {
           wifiSetCredentials(ssid.c_str(), pass.c_str());
           informClients("wifiState", "saved");
-          ESP.restart();  // Neustart mit neuen Daten
+          pendingReboot = true;          
       }
   }
   else if (action == "mqttSet")
@@ -307,9 +373,12 @@ logPrintf("✔️ WS: Frame OK – Verarbeitung laeuft weiter\n");
     int s1 = value["s1"]      | reedPins.s1;
     int s2 = value["s2"]      | reedPins.s2;
     int t = value["t"]      | reedPins.t;
+    int w  = value["wind"] | reedPins.wind;
+
     // Validieren
     if (!isSafeInputPullupPin(m) || !isSafeInputPullupPin(s1) || !isSafeInputPullupPin(s2)) {
       informClients("error", "Ungueltige GPIOs (keine Pullups/Flash/Bootstraps)");
+      insideWebSocketEvent = false;
       return;
     }
     // Vorherige Pins sind INPUT_PULLUP – keine Deinit nötig,
@@ -318,19 +387,34 @@ logPrintf("✔️ WS: Frame OK – Verarbeitung laeuft weiter\n");
     reedPins.s1 = s1;
     reedPins.s2 = s2;
     reedPins.t = t;
+    reedPins.wind = w;
+    
     reedApplyPins();
     reedSaveConfig();
     informClients("reedPinsSaved", "ok");
-    logPrintf("GPIO Pins aktualisiert: M=%d, S1=%d, S2=%d, T=%d\n", m, s1, s2,t);
+    logPrintf("GPIO Pins aktualisiert: M=%d, S1=%d, S2=%d, T=%d, W=%d\n", m, s1, s2,t,w);
   }
   else if (action == "reboot") 
   {
     logPrintln("Reboot Befehl empfangen, Neustart...");
     informClients("rebooting", "ESP wird neu gestartet");
-    delay(1000); // kurze Pause, damit Nachricht gesendet wird
-    ESP.restart();
+    pendingReboot = true;        
   }
-
+  else if (action == "check") 
+  {
+    String msg = valueStr.length() > 0 ? valueStr : "Testnachricht vom Client";
+    logPrintf("Check-Nachricht empfangen: %s\n", msg.c_str());
+    informClients("check", msg);
+  }
+  else if (action == "setMaxWind")
+  {
+      int mw = value.as<int>();//esp benötigt den Wert nicht, verteilt aber an die Clients
+      logPrintf("MaxWind setzen auf: %d\n", mw);
+      // Rückmeldung an alle Clients
+      informClients("setMaxWind", mw);      
+  }
+  
+  insideWebSocketEvent = false;
 }
 
 void setupDHTandSensor()
@@ -429,18 +513,36 @@ void statusPoll() {
     }
   }
 
+  // Windsensor abfragen
+  bool windChanged = pollWindSensor();
+
   // WebSocket wie gehabt
-  if (awnChanged || cliChanged) {
+  if (awnChanged || cliChanged || windChanged) {
     ws.textAll(makeSensorMsg());
   }
 
   // MQTT: getrennt publizieren
-  if (awnChanged) mqttPublishAwning();   // neu
-  if (cliChanged) mqttPublishClimate();  // neu
+  if (awnChanged) mqttPublishAwning();  
+  if (cliChanged || windChanged) mqttPublishClimate();
 }
 
  
  
+void processWSOutbox() {
+  if (wsOutbox.empty()) return;
+
+  for (auto &item : wsOutbox) {
+      if (item.clientId == 0) {
+          ws.textAll(item.msg);
+      } else {
+          AsyncWebSocketClient *c = ws.client(item.clientId);
+          if (c && c->status() == WS_CONNECTED) {
+              c->text(item.msg);
+          }
+      }
+  }
+  wsOutbox.clear();
+}
 
 
 // ---- Setup und Loop ----     
@@ -479,4 +581,11 @@ void loop()
 
   statusPoll();
   mqtt.poll();
+  if (pendingReboot && pendingMessages.empty() && !insideWebSocketEvent)
+  {
+    delay(200);     // kleine Chance für Clients zum Empfangen
+    ESP.restart();  // jetzt erst rebooten
+  }
+  //interessant, hier kein insideWebSocketEvent nötig
+  processWSOutbox();
 }
