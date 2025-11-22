@@ -79,6 +79,7 @@ const char index_html[] PROGMEM = R"rawliteral(
     padding: 10px;
     border-radius: 8px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+    martin-top: -60px;
   }
 
   .wind-gauge-wrapper {
@@ -361,7 +362,7 @@ function drawWindGauge(value, maxWind) {
     const lw = 80;           // gewünschte Strichstärke    
 
     const cx = w / 2;
-    const cy = h-margin/2 ;
+    const cy = h-margin/2;
     const rGauge = Math.min(w / 2, h) - margin - lw/2-1; 
     const rPointer = rGauge + lw/2-margin/2;
 
