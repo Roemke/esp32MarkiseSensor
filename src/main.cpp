@@ -39,7 +39,7 @@ struct ReedPins {
 
 //windgeschichten
 volatile uint32_t windPulses = 0;   // Zählt die Pulse per ISR, volatile wegen ISR
-uint32_t lastWindMs = 0;
+
 float windSpeed = 0.0f; 
 
 void IRAM_ATTR windISR() { //darf nicht inline sein
@@ -64,8 +64,8 @@ bool pollWindSensor()
     float newWind = pps * (1.75f / 20.0f);
 
     bool changed = false;
-    if (isnan(lastWind) || fabsf(newWind - lastWind) >= 0.2f) {  
-        // Änderung >= 0.2 m/s
+    if (isnan(lastWind) || fabsf(newWind - lastWind) >= 0.1f) {  
+        // Änderung >= 0.1 m/s
         changed = true;
     }
 

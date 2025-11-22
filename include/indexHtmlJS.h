@@ -128,27 +128,33 @@ let latestWindValue = 0.0;
 let windGaugeChart = null;
 let windHistoryChart = null;
 const windHistory = [];
+// Gemeinsame Beaufort-Tabelle für beide Funktionen
+const BEAUFORT_MAP = [
+    { max: 0.2,  bft: 0,  label: "Flaute",          color: "#4caf50" },
+    { max: 1.5,  bft: 1,  label: "Leiser Zug",       color: "#8bc34a" },
+    { max: 3.3,  bft: 2,  label: "Leichte Brise",    color: "#cddc39" },
+    { max: 5.4,  bft: 3,  label: "Schwache Brise",   color: "#ffeb3b" },
+    { max: 7.9,  bft: 4,  label: "Mäßige Brise",     color: "#ffc107" },
+    { max: 10.7, bft: 5,  label: "Frische Brise",    color: "#ff9800" },
+    { max: 13.8, bft: 6,  label: "Starker Wind",     color: "#ff5722" },
+    { max: 17.1, bft: 7,  label: "Steifer Wind",     color: "#f44336" },
+    { max: 20.7, bft: 8,  label: "Stürmischer Wind", color: "#e53935" },
+    { max: 24.4, bft: 9,  label: "Sturm",            color: "#c62828" },
+    { max: 28.4, bft: 10, label: "Schwerer Sturm",   color: "#b71c1c" },
+    { max: 33.0, bft: 11, label: "Orkan",            color: "#880e4f" },
+    { max: 40.0, bft: 12, label: "Orkan+",           color: "#4a148c" },
+    { max: 50.0, bft: 13, label: "Extrem",           color: "#1a237e" },
+    { max: 80.0, bft: 14, label: "Mega-Orkan",       color: "#0d47a1" }
+];
 
 function windToBeaufort(v) {
-  // sehr grobe Einteilung in m/s
-  const table = [
-    { max: 0.2,  bft: 0, label: "Flaute" },
-    { max: 1.5,  bft: 1, label: "Leiser Zug" },
-    { max: 3.3,  bft: 2, label: "Leichte Brise" },
-    { max: 5.4,  bft: 3, label: "Schwache Brise" },
-    { max: 7.9,  bft: 4, label: "Mäßige Brise" },
-    { max: 10.7, bft: 5, label: "Frische Brise" },
-    { max: 13.8, bft: 6, label: "Starker Wind" },
-    { max: 17.1, bft: 7, label: "Steifer Wind" },
-    { max: 20.7, bft: 8, label: "Stürmischer Wind" },
-    { max: 24.4, bft: 9, label: "Sturm" },
-    { max: 28.4, bft: 10, label: "Schwerer Sturm" }
-  ];
 
-  for (const e of table) {
+  for (const e of BEAUFORT_MAP) {
     if (v <= e.max) return { bft: e.bft, label: e.label };
   }
-  return { bft: 11, label: "Orkanartig" };
+  // Sollte prinzipiell nie erreicht werden
+    const last = BEAUFORT_MAP[BEAUFORT_MAP.length - 1];
+    return { bft: last.bft, label: last.label };
 }
 
 // ------------------------------------------------------
@@ -257,48 +263,85 @@ function linInterpolationColor(c1, c2, t) {
     };
 }
 function drawBeaufortGradientScale(ctx, cx, cy, r, lw, maxWind) {
-    const beaufortSteps = [
-        { max: 1.5,  color: "#4caf50" },
-        { max: 3.3,  color: "#8bc34a" },
-        { max: 5.4,  color: "#cddc39" },
-        { max: 7.9,  color: "#ffeb3b" },
-        { max: 10.7, color: "#ffc107" },
-        { max: 13.8, color: "#ff9800" },
-        { max: 17.1, color: "#ff5722" },
-        { max: 20.7, color: "#f44336" },
-        { max: 24.4, color: "#e53935" },
-        { max: 28.4, color: "#c62828" },
-        { max: 33.0, color: "#b71c1c" },
-        { max: 40.0, color: "#880e4f" },
-        { max: 50.0, color: "#4a148c" },
-        { max: 80.0, color: "#1a237e" }
-    ];
-
-    // Steps passend zu maxWind aufbauen
+    
+    // Steps passend zu maxWind aufbauen — aber mit RGB-Farben
     const steps = [];
     let prev = 0;
-    for (const s of beaufortSteps) {
+    let prevColor = BEAUFORT_MAP[0].color;
+
+    for (const s of BEAUFORT_MAP) {
         const end = Math.min(s.max, maxWind);
-        steps.push({ min: prev, max: end, color: s.color });
+        steps.push({
+            min: prev,
+            max: end,
+            c1: hexToRgb(prevColor),
+            c2: hexToRgb(s.color)
+        });
         prev = end;
+        prevColor = s.color;
         if (end >= maxWind) break;
     }
 
     ctx.lineWidth = lw;
 
     const totalWind  = maxWind;
-    const angleStart = Math.PI;    // links
-    const totalAngle = Math.PI;    // 180°-Halbkreis
+    const angleStart = Math.PI;
+    const totalAngle = Math.PI;
 
+    let SUB = 10; // Anzahl Untersegmente pro Beaufort-Stufe
+    let delta = 0.1;
     for (const s of steps) {
-        let a1 = angleStart + (s.min / totalWind) * totalAngle;
-        let a2 = angleStart + (s.max / totalWind) * totalAngle;
-        console.log(`s: ${s.min} - ${s.max}, angles: ${a1} - ${a2}, color: ${s.color}`);
-        ctx.strokeStyle = s.color;
+        const span = s.max - s.min;
+        if (span <= 0) continue;
+
+        for (let j = 0; j < SUB; j++) {
+            const t0 = j / SUB;
+            const t1 = (j + 1) / SUB;
+
+            const w0 = s.min + span * t0;
+            const w1 = s.min + span * t1;
+
+            // Farbe interpolieren
+            const col = linInterpolationColor(s.c1, s.c2, t0);
+            ctx.strokeStyle = `rgb(${col.r|0},${col.g|0},${col.b|0})`;
+
+            let a1 = angleStart + (w0 / totalWind) * totalAngle - delta;
+            let a2 = angleStart + (w1 / totalWind) * totalAngle +delta; //kleiner Puffer gegen Lücken
+            ctx.beginPath();
+            //pi ist links, bis 2pi ist der bogen obenrum, arc ist im uhrzeigersinn counterclockwise=false
+            //eigentlich der standard. 
+            ctx.arc(cx, cy, r, a1, a2, false);  // clockwise zeichnen 
+            ctx.stroke();
+        }
+    }
+}
+
+function drawBeaufortTicks(ctx, cx, cy, rPointer, maxWind) {
+    ctx.lineWidth = 2;
+    ctx.strokeStyle = "rgba(0,0,0,0.7)";
+
+    const angleStart = Math.PI;
+    const totalAngle = Math.PI;
+
+    for (const s of BEAUFORT_MAP) {
+
+        const wind = Math.min(s.max, maxWind);
+        if (wind <= 0 || wind > maxWind) continue;
+
+        const frac  = wind / maxWind;
+        const angle = angleStart + frac * totalAngle;
+
+        const inner = rPointer - 12;
+        const outer = rPointer + 4;
+
+        const x1 = cx + Math.cos(angle) * inner;
+        const y1 = cy + Math.sin(angle) * inner;
+        const x2 = cx + Math.cos(angle) * outer;
+        const y2 = cy + Math.sin(angle) * outer;
+
         ctx.beginPath();
-        let counter=false;
-        //start und end werden im Uhrzeigersinn gemessen, d.h. von pi bis 2pi ist der obere Kreis
-        ctx.arc(cx, cy, r, a1, a2, counter); //true: wäre gegen Uhrzeigersinn zeichnen
+        ctx.moveTo(x1, y1);
+        ctx.lineTo(x2, y2);
         ctx.stroke();
     }
 }
@@ -318,7 +361,7 @@ function drawWindGauge(value, maxWind) {
     const lw = 80;           // gewünschte Strichstärke    
 
     const cx = w / 2;
-    const cy = h-margin/2;
+    const cy = h-margin/2 ;
     const rGauge = Math.min(w / 2, h) - margin - lw/2-1; 
     const rPointer = rGauge + lw/2-margin/2;
 
@@ -335,6 +378,7 @@ function drawWindGauge(value, maxWind) {
     //let prevFrac = 0;  // 0 = maxWind 0, 1 = maxWind erreicht
     //geaendert, jedes segment wird durch folgende routine in 0.5 Grad unterteilt
     drawBeaufortGradientScale(ctx, cx, cy, rGauge, lw, maxWind);
+    drawBeaufortTicks(ctx, cx, cy, rPointer, maxWind);
 
 
     // ------ Zeiger ------
