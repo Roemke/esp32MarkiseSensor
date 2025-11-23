@@ -53,26 +53,36 @@ const char index_html[] PROGMEM = R"rawliteral(
   .badge.err     { background:#c62828; color:#fff; }  /* rot */
   .badge.neutral { background:#9e9e9e; color:#fff; }  /* grau */  
   
-  /* styles für mobile und so */
+  
   .status-grid {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 20px;
-  align-items: flex-start;
+    display: grid;
+    grid-template-columns: 450px 320px; /*  fix */
+    gap: 25px;
   }
-
-  .status-col {
-    flex: 1 1 260px;
-    min-width: 260px;
+  /* Der große History-Chart darunter */
+  .history-wide {
+      width: 100%;
+      margin: 0 auto;       /* zentriert auf Desktop */
   }
+  .history-wide canvas {
+    width: 960px;    
+  } 
+  
 
   /* Mobile: alles untereinander */
   @media (max-width: 900px) {
-    .status-grid {
-      flex-direction: column;
-    }
-  }
 
+    .status-grid {
+        grid-template-columns: 1fr;  /* nur eine Spalte */
+    }
+
+    .history-wide canvas {
+        height: 180px !important;
+    }
+    .wind-card {
+        margin-top: 0px;
+    }    
+}
   /* Wind-Card und Diagramme */
   .wind-card {
     background: #fafafa;
@@ -112,7 +122,7 @@ const char index_html[] PROGMEM = R"rawliteral(
 
   .wind-chart-wrapper canvas {
     width: 100%%;
-    max-width: 340px;
+    max-width: 800px;
   }
 
 </style>
@@ -193,6 +203,16 @@ function initWebSocket() {
         else if (data.action === "sensor") 
         {
           const v = data.value || {};
+
+          if (v.w > maxWind)
+          {
+            while(v.w > maxWind) maxWind +=5;
+            console.log("MaxWind automatisch auf", maxWind, "erhöht");
+            document.getElementById("maxWindSlider").value = maxWind; //müsste send ausloesen
+            document.getElementById("maxWindValue").textContent = maxWind;
+            windHistoryChart.options.scales.y.max = maxWind*3.6;
+            windHistoryChart.update();
+          }          
           updateStatusUI(v);
         }
         else if (data.action === "log") 
@@ -204,7 +224,7 @@ function initWebSocket() {
           maxWind = Number(data.value);
           console.log("Neuer MaxWind:", maxWind);
           if (windHistoryChart) {
-              windHistoryChart.options.scales.y.max = maxWind;
+              windHistoryChart.options.scales.y.max = maxWind*3.6;
               windHistoryChart.update();
           }
           if (windGaugeChart) updateWindUI(latestWindValue);
@@ -406,18 +426,18 @@ function updateWindUI(w) {
     const v = Math.min(w, maxWind);  // sinnvoll & einfach
     drawWindGauge(v, maxWind);
 
+    document.getElementById("windValueKMH").textContent = (v*3.6).toFixed(1);
     document.getElementById("windValue").textContent = v.toFixed(1);
-
     const bf = windToBeaufort(v);
     document.getElementById("windBft").textContent =
         `Beaufort ${bf.bft}: ${bf.label}`;
 
     // Verlauf weiter aktualisieren wie bisher …
     const now = new Date().toLocaleTimeString();
-    windHistory.push({ t: now, v: v });
-    if (windHistory.length > 60) windHistory.shift();
+    windHistory.push({ t: now, v: (v*3.6) });
+    if (windHistory.length > 1000) windHistory.shift();
     windHistoryChart.data.labels = windHistory.map(e => e.t);
-    windHistoryChart.data.datasets[0].data = windHistory.map(e => e.v);
+    windHistoryChart.data.datasets[0].data = windHistory.map(e => e.v);//v ist bereits in km/h in der history
     windHistoryChart.update();
 }
 
@@ -432,7 +452,7 @@ function initWindHistoryChart() {
         data: {
             labels: [],
             datasets: [{
-                label: "Wind (m/s)",
+                label: "Wind (History)",
                 data: [],
                 borderColor: "#1976d2",
                 backgroundColor: "rgba(25,118,210,0.15)",
@@ -449,12 +469,12 @@ function initWindHistoryChart() {
                 x: { display: false },
                 y: {
                     min: 0,
-                    max: maxWind,
+                    max: maxWind*3.6,
                     grid: { color: "rgba(0,0,0,0.1)" }
                 }
             },
             plugins: {
-                legend: { display: false }
+                legend: { display: true }
             }
         }
     });
@@ -474,7 +494,7 @@ function updateStatusUI(v) {
   if (typeof v.s2 !== "undefined") setBadge("valS2", magnetText(!!v.s2), !!v.s2 ? "ok" : "err");
   if (typeof v.w === "number") 
   { 
-    setBadge("valWind", v.w.toFixed(1) + " m/s", windClass(v.w));
+    setBadge("valWind", (v.w*3.6).toFixed(1) + " km/h", windClass(v.w));
     latestWindValue = v.w;
     updateWindUI(v.w);
   }
@@ -577,34 +597,35 @@ window.addEventListener("load", initUI);
   <div class="status-grid">
 
     <!-- Linke Spalte: Temperatur / Feuchte / Reed -->
-    <div class="status-col">
+    <div class="status-left">
       <div class="kv"><label>Temperatur:</label> <span class="badge" id="valTemp">--.- °C</span></div>
       <div class="kv"><label>Feuchtigkeit:</label> <span class="badge" id="valHum">--.- %%</span></div>
       <hr>
       <div class="kv"><label>Magnet Markise:</label> <span class="badge" id="valM">unbekannt</span></div>
       <div class="kv"><label>Magnet Sensor 1:</label> <span class="badge" id="valS1">unbekannt</span></div>
       <div class="kv"><label>Magnet Sensor 2:</label> <span class="badge" id="valS2">unbekannt</span></div>
-      <div class="kv"><label>Wind (Text):</label> <span class="badge" id="valWind">--.- m/s</span></div>
+      <div class="kv"><label>Wind:</label> <span class="badge" id="valWind">--.- km/h</span></div>
     </div>
 
-    <!-- Rechte Spalte: Wind-Gauge + Mini-Chart -->
-    <div class="status-col">
+    <!-- Rechte Spalte: Wind-Gauge  -->
+    <div class="status-right">
       <div class="wind-card">
         <h3>Wind</h3>
         <div class="wind-gauge-wrapper">
-          <canvas id="windGauge" width="260" height="130"></canvas>
+          <canvas id="windGauge" width="480" height="260"></canvas>
           <div class="wind-value">
-            <span id="windValue">--.-</span> m/s
+            <span id="windValueKMH">--.-</span> km/h =
+            <span id="windValue">--.-</span> m/s 
           </div>
           <div class="wind-bft" id="windBft">Beaufort: --</div>
         </div>
-        <div class="wind-chart-wrapper">
-          <canvas id="windChart"></canvas>
-        </div>
       </div>
     </div>
-
   </div>
+  <div class="history-wide">
+    <canvas id="windChart"></canvas>
+  </div>
+
 </div>
 
 <div id="wifi" class="tabcontent">
