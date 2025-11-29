@@ -9,7 +9,7 @@ const char index_html[] PROGMEM = R"rawliteral(
 <meta name='viewport' content='width=device-width'>
 <title>MarkisenSensoren</title>
 <style>
-  body { font-family: Arial, sans-serif; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; margin: 0; padding: 0; background-color: #fafafa;}
   .tab { overflow: hidden; background-color: #333; }
   .tab button {
     background-color: inherit; border: none; outline: none;
@@ -35,15 +35,19 @@ const char index_html[] PROGMEM = R"rawliteral(
     border: 10px inset #004000;
     margin-top: 10px;
   }  
-  div {
-    margin-bottom: 10px;
+  
+  .kv {
+    display:flex;
+    gap:10px;
+    align-items:baseline;
+    margin-bottom: 10px;   /* schöner Abstand */
   }
-  .kv { 
-    display:flex; gap:10px; align-items:baseline; 
-  }
+
+  
   .kv label 
     { 
-      min-width: 230px; 
+      min-width: 160px;
+      flex-shrink: 0; 
       color:#444; 
     }
 
@@ -54,68 +58,61 @@ const char index_html[] PROGMEM = R"rawliteral(
   .badge.neutral { background:#9e9e9e; color:#fff; }  /* grau */  
   
   
-  .status-grid {
-    display: grid;
-    grid-template-columns: 450px 320px; /*  fix */
-    gap: 25px;
+  .status-flex {
+    display: flex;
+    flex-flow: row nowrap;
+    margin: 0 auto;       /* zentriert */
+    
+    
+    align-items: stretch;
+    justify-content: space-evenly;
+    padding: 15px 50px;
+    grid-template-columns: auto 1fr auto;
+    column-gap: 0px;
+    row-gap: 5px;
   }
-  /* Der große History-Chart darunter */
-  .history-wide {
-      width: 100%;
-      margin: 0 auto;       /* zentriert auf Desktop */
-  }
-  .history-wide canvas {
-    width: 960px;    
-  } 
-  
 
-  /* Mobile: alles untereinander */
-  @media (max-width: 900px) {
-
-    .status-grid {
-        grid-template-columns: 1fr;  /* nur eine Spalte */
-    }
-
-    .history-wide canvas {
-        height: 180px !important;
-    }
-    .wind-card {
-        margin-top: 0px;
-    }    
-}
-  /* Wind-Card und Diagramme */
-  .wind-card {
-    background: #fafafa;
-    padding: 10px;
+  .status-left, .status-right {
+    background: #eaeaea;
+    padding: 10px 50px;
     border-radius: 8px;
     box-shadow: 0 1px 3px rgba(0,0,0,0.1);
-    margin-top: -60px;
+    min-width: 300px;
+  }
+  
+  .status-left hr {
+    margin: 16px 0;  
+  }
+  .status-right div {
+    width: fit-content;
+    margin: 0px auto;
+    margin-top: 5px;
   }
 
-  .wind-gauge-wrapper {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-  }
 
+  /* Der große History-Chart darunter */
+.history-wide {
+    width: 80vw;
+    margin: 0 auto;   /* garantiert perfekt symmetrisch! */
+}
 
-  #windGauge {
-    width: 260px;      /* feste Größe: garantiert runder Halbkreis */
-    height: 130px;     /* exakt halbe Höhe → perfekter Halbkreis */
+.history-wide canvas {
+    width: 100%% ;
+    height: 300px;
     display: block;
-    margin: auto;
-  }
+}
+  
+#windGauge {
+    display: block;
+    max-width: 100%;
+    width: auto;              /* NICHT 100% → sonst oval */
+    height: auto;
+    aspect-ratio: 2 / 1;      /* garantiert Rundheit */
+    margin: 0 auto;           /* zentriert */
+    margin-bottom: 20px;
+}
 
-  .wind-value {
-    font-size: 1.4em;
-    margin-top: 4px;
-  }
-
-  .wind-bft {
-    font-size: 0.9em;
-    color: #555;
-  }
-
+  
   .wind-chart-wrapper {
     margin-top: 10px;
   }
@@ -123,6 +120,21 @@ const char index_html[] PROGMEM = R"rawliteral(
   .wind-chart-wrapper canvas {
     width: 100%%;
     max-width: 800px;
+  }
+
+
+/* Mobile */
+  @media (max-width: 600px) {
+    .history-wide canvas {
+        height: 180px;
+    }
+    .status-flex {
+      display: flex;
+      flex-flow: column;
+    }
+    .status-left, .status-right {
+      padding: 10px 10px;
+    }
   }
 
 </style>
@@ -464,6 +476,7 @@ function initWindHistoryChart() {
         },
         options: {
             responsive: true,
+            maintainAspectRatio: false,
             animation: false,
             scales: {
                 x: { display: false },
@@ -592,12 +605,11 @@ window.addEventListener("load", initUI);
   <button class="tablink" onclick="openTab(event, 'help')">Help</button>  
 </div>
 <div id="status" class="tabcontent">
-  <h2>Status</h2>
 
-  <div class="status-grid">
-
+  <div class="status-flex">
     <!-- Linke Spalte: Temperatur / Feuchte / Reed -->
     <div class="status-left">
+      <h2>Status</h2>
       <div class="kv"><label>Temperatur:</label> <span class="badge" id="valTemp">--.- °C</span></div>
       <div class="kv"><label>Feuchtigkeit:</label> <span class="badge" id="valHum">--.- %%</span></div>
       <hr>
@@ -606,20 +618,17 @@ window.addEventListener("load", initUI);
       <div class="kv"><label>Magnet Sensor 2:</label> <span class="badge" id="valS2">unbekannt</span></div>
       <div class="kv"><label>Wind:</label> <span class="badge" id="valWind">--.- km/h</span></div>
     </div>
-
+    <!-- puffer spalte layout -->
+    <div class="status-puffer"></div>
     <!-- Rechte Spalte: Wind-Gauge  -->
     <div class="status-right">
-      <div class="wind-card">
-        <h3>Wind</h3>
-        <div class="wind-gauge-wrapper">
-          <canvas id="windGauge" width="480" height="260"></canvas>
-          <div class="wind-value">
-            <span id="windValueKMH">--.-</span> km/h =
-            <span id="windValue">--.-</span> m/s 
-          </div>
-          <div class="wind-bft" id="windBft">Beaufort: --</div>
-        </div>
-      </div>
+	    <h2>Wind</h2>
+	    <canvas id="windGauge"></canvas>
+	    <div class="wind-value">
+	      <span id="windValueKMH">--.-</span> km/h =
+	      <span id="windValue">--.-</span> m/s 
+	    </div>
+	    <div class="wind-bft" id="windBft">Beaufort: --</div>
     </div>
   </div>
   <div class="history-wide">
