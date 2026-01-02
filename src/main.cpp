@@ -288,8 +288,14 @@ void onWsEvent(AsyncWebSocket *server, AsyncWebSocketClient *client,
     logPrintf("📡 Client #%u verbunden\n", client->id());
     // Aktuellen Status senden
     initialInformClient(client);
+    insideWebSocketEvent = false;
+    return;
   }
-  else if(type != WS_EVT_DATA) 
+  if (type == WS_EVT_DISCONNECT) {
+    insideWebSocketEvent = false;
+    return;
+  }
+  if(type != WS_EVT_DATA) 
   {
     insideWebSocketEvent = false;
     return;
@@ -588,4 +594,5 @@ void loop()
   }
   //interessant, hier kein insideWebSocketEvent nötig
   processWSOutbox();
+  logProcessPending();
 }

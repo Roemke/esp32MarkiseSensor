@@ -699,11 +699,15 @@ window.addEventListener("load", initUI);
 <div id="help" class="tabcontent">
   <h2>Help</h2>
   <p>Folgende Funktionen existieren:</p>
-  <ul>
-    <li>Steuerung der Markise</li>
-    <li>Setup der Servo-Endpunkte</li>
+  <ul>    
     <li>WLAN / MQTT Konfiguration</li>
-    <li>OTA-Update über <a href="/update">diesen Link</a></li>
+    <li>Festlegen der GPIOs für die Reedkontakte</li>
+    <li>Anzeige der Sensorwerte (Temperatur, Feuchte, Reedkontakte, Wind)</li>
+    <li>Anzeige des Windwertes in einem analogen Windmesser (Gauge) und als Verlaufsgrafik</li>
+    <li>Einstellen des maximalen Windbereiches für die Anzeige</li>
+    <li>Anzeige von Log-Nachrichten vom ESP</li>
+    <li>Neustart des ESP</li>
+    <li>OTA-Update über <a href="/update">diesen Link</a></li>    
   </ul>
 
   <!-- Logs ans Ende des Help-Tabs -->

@@ -6,6 +6,7 @@ void logBufferAdd(const char *line);
 void logPrintln(const String &text);
 void logPrintln(const char* text);
 void logPrintf(const char* format, ...);
+void logProcessPending() ;
 
 extern char logBuffer[50][128]; // 50 Zeilen à 128 Zeichen
 extern uint8_t logIndex; // Index der nächsten Zeile
